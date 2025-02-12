@@ -1,79 +1,29 @@
-const axios = require("axios");
-const cheerio = require("cheerio");
+const puppeteer = require("puppeteer");
 
-// URL to scrape
-const url = "https://www.coolgenerator.com/credit-card-generator-india";
-
-// Function to validate Luhn Algorithm
-function luhnCheck(number) {
-    let digits = number.replace(/\s/g, "").split("").map(Number);
-    let sum = 0;
-    let alternate = false;
-
-    for (let i = digits.length - 1; i >= 0; i--) {
-        let n = digits[i];
-        if (alternate) {
-            n *= 2;
-            if (n > 9) n -= 9;
-        }
-        sum += n;
-        alternate = !alternate;
-    }
-
-    return sum % 10 === 0;
-}
-
-// Scrape credit card details
 async function fetchCardDetails() {
-    try {
-        const response = await axios.get(url, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36"
-            }
-        });
+    const browser = await puppeteer.launch({ headless: true });
+    const page = await browser.newPage();
 
-        const $ = cheerio.load(response.data);
-        const firstCardNode = $(".list-unstyled.content-list li").first();
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36");
+    await page.goto("https://www.coolgenerator.com/credit-card-generator-india", { waitUntil: "networkidle2" });
 
-        if (!firstCardNode.length) {
-            console.log(JSON.stringify({ error: "No card details found." }, null, 2));
-            return;
-        }
+    // Extract card details
+    const cardData = await page.evaluate(() => {
+        const firstCard = document.querySelector(".list-unstyled.content-list li");
+        if (!firstCard) return { error: "No card details found." };
 
-        // Extracting data
-        const cardBrand = firstCardNode.find("p.grey span").first().text().trim();
-        const cardNumber = firstCardNode.find("p.font-18 b span").first().text().trim();
-        const expiry = firstCardNode.find("p.grey:contains('Expiry') span").first().text().trim();
-        const cvv = firstCardNode.find("p.grey:contains('Expiry') span").eq(1).text().trim();
-        const issuer = firstCardNode.find("p.grey:contains('Issuer') span").first().text().trim();
-        const holder = firstCardNode.find("p:contains('Holder:') span").first().text().trim() || "N/A";
-        const binNumber = cardNumber.replace(/\s/g, "").substring(0, 6);
-        const cardType = /VISA|MASTERCARD/.test(cardBrand) ? "Credit Card" : "Debit Card";
-        const country = "India";
-        const cardLevel = "Classic"; // Basic assumption
-        const isValidLuhn = luhnCheck(cardNumber) ? "Yes" : "No";
-
-        // Final formatted response
-        const selectedCard = {
-            "Card Brand": cardBrand,
-            "Card Type": cardType,
-            "Card Level": cardLevel,
-            "Credit Card No": cardNumber,
-            "BIN Number": binNumber,
-            "Expiry": expiry,
-            "CVV": cvv,
-            "Issuer": issuer,
-            "Cardholder Name": holder,
-            "Country of Issue": country,
-            "Luhn Valid": isValidLuhn
+        return {
+            "Card Brand": firstCard.querySelector("p.grey span")?.innerText.trim() || "N/A",
+            "Credit Card No": firstCard.querySelector("p.font-18 b span")?.innerText.trim() || "N/A",
+            "Expiry": firstCard.querySelector("p.grey:contains('Expiry') span")?.innerText.trim() || "N/A",
+            "CVV": firstCard.querySelector("p.grey:contains('Expiry') span:nth-child(2)")?.innerText.trim() || "N/A",
+            "Issuer": firstCard.querySelector("p.grey:contains('Issuer') span")?.innerText.trim() || "N/A",
+            "Cardholder Name": firstCard.querySelector("p:contains('Holder:') span")?.innerText.trim() || "N/A",
         };
+    });
 
-        console.log(JSON.stringify(selectedCard, null, 2));
-
-    } catch (error) {
-        console.error("Error fetching card details:", error.message);
-    }
+    console.log(JSON.stringify(cardData, null, 2));
+    await browser.close();
 }
 
-// Run the function
 fetchCardDetails();
